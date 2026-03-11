@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/example/masking-tool-backend/internal/models"
 	"github.com/example/masking-tool-backend/internal/services"
@@ -31,9 +32,9 @@ func (h *JobHandler) CreateJob(c *fiber.Ctx) error {
 			User     string `json:"user"`
 			Password string `json:"password"`
 		} `json:"sourceDB"`
-		Table     string `json:"table"`
-		Output    string `json:"output"`
-		StagingDB *struct {
+		Table    string `json:"table"`
+		Output   string `json:"output"`
+		TargetDB *struct {
 			Type     string `json:"type"`
 			Host     string `json:"host"`
 			Port     int    `json:"port"`
@@ -41,29 +42,25 @@ func (h *JobHandler) CreateJob(c *fiber.Ctx) error {
 			User     string `json:"user"`
 			Password string `json:"password"`
 			Table    string `json:"table"`
-		} `json:"stagingDB,omitempty"`
+		} `json:"targetDB,omitempty"`
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid request")
 	}
-	var stagingType, stagingHost, stagingDatabase, stagingUser, stagingPassword, stagingTableName *string
-	var stagingPort *int
-	if req.StagingDB != nil {
-		stagingTypeValue := req.StagingDB.Type
-		if stagingTypeValue == "" {
-			stagingTypeValue = "mysql"
+	// we only need the target type and optional table name for storage;
+	// other connection parameters will be provided later when running the job.
+	var targetType, targetTableName *string
+	if req.TargetDB != nil {
+		typeVal := req.TargetDB.Type
+		if typeVal == "" {
+			typeVal = "mysql"
 		}
-		stagingType = &stagingTypeValue
-		stagingHost = &req.StagingDB.Host
-		stagingPort = &req.StagingDB.Port
-		stagingDatabase = &req.StagingDB.Database
-		stagingUser = &req.StagingDB.User
-		stagingPassword = &req.StagingDB.Password
-		if req.StagingDB.Table != "" {
-			stagingTableName = &req.StagingDB.Table
+		targetType = &typeVal
+		if req.TargetDB.Table != "" {
+			targetTableName = &req.TargetDB.Table
 		}
 	}
-	job, err := h.svc.CreateJob(req.Name, req.SourceDB.Type, req.SourceDB.Host, req.SourceDB.Port, req.SourceDB.Database, req.SourceDB.User, req.SourceDB.Password, req.Table, req.Output, stagingType, stagingHost, stagingPort, stagingDatabase, stagingUser, stagingPassword, stagingTableName)
+	job, err := h.svc.CreateJob(req.Name, req.SourceDB.Type, req.Table, req.Output, targetType, targetTableName)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}
@@ -81,10 +78,12 @@ func (h *JobHandler) ListJobs(c *fiber.Ctx) error {
 
 	// transform to frontend-friendly shape
 	type jobResp struct {
-		ID        string `json:"id"`
-		TableName string `json:"table_name"`
-		Status    string `json:"status"`
-		TotalRows int    `json:"total_rows"`
+		ID         string     `json:"id"`
+		TableName  string     `json:"table_name"`
+		Status     string     `json:"status"`
+		TotalRows  int        `json:"total_rows"`
+		StartedAt  *time.Time `json:"started_at,omitempty"`
+		FinishedAt *time.Time `json:"finished_at,omitempty"`
 	}
 	var out []jobResp
 	for _, j := range jobs {
@@ -94,6 +93,8 @@ func (h *JobHandler) ListJobs(c *fiber.Ctx) error {
 		}
 		status := "PENDING"
 		rows := 0
+		var startedAt *time.Time
+		var finishedAt *time.Time
 		if len(j.JobRuns) > 0 {
 			latest := j.JobRuns[0]
 			for _, r := range j.JobRuns {
@@ -103,8 +104,10 @@ func (h *JobHandler) ListJobs(c *fiber.Ctx) error {
 			}
 			status = strings.ToUpper(latest.Status)
 			rows = latest.RowsProcessed
+			startedAt = &latest.StartedAt
+			finishedAt = latest.FinishedAt
 		}
-		out = append(out, jobResp{ID: j.ID, TableName: table, Status: status, TotalRows: rows})
+		out = append(out, jobResp{ID: j.ID, TableName: table, Status: status, TotalRows: rows, StartedAt: startedAt, FinishedAt: finishedAt})
 	}
 
 	return c.JSON(fiber.Map{"data": out, "total": total})
@@ -141,7 +144,55 @@ func (h *JobHandler) SaveMaskingRules(c *fiber.Ctx) error {
 // RunJob
 func (h *JobHandler) RunJob(c *fiber.Ctx) error {
 	id := c.Params("id")
-	run, err := h.svc.RunJob(id)
+
+	// parse connection information from request body
+	var req struct {
+		SourceDB struct {
+			Type     string `json:"type"`
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+			Database string `json:"database"`
+			User     string `json:"user"`
+			Password string `json:"password"`
+		} `json:"sourceDB"`
+		TargetDB *struct {
+			Type     string `json:"type"`
+			Host     string `json:"host"`
+			Port     int    `json:"port"`
+			Database string `json:"database"`
+			User     string `json:"user"`
+			Password string `json:"password"`
+			Table    string `json:"table"`
+		} `json:"targetDB,omitempty"`
+	}
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid request")
+	}
+
+	srcCfg := models.DBConfig{
+		Type:     req.SourceDB.Type,
+		Host:     req.SourceDB.Host,
+		Port:     req.SourceDB.Port,
+		Database: req.SourceDB.Database,
+		User:     req.SourceDB.User,
+		Password: req.SourceDB.Password,
+	}
+	var tgtCfg *models.DBConfig
+	if req.TargetDB != nil {
+		tgtCfg = &models.DBConfig{
+			Type:     req.TargetDB.Type,
+			Host:     req.TargetDB.Host,
+			Port:     req.TargetDB.Port,
+			Database: req.TargetDB.Database,
+			User:     req.TargetDB.User,
+			Password: req.TargetDB.Password,
+		}
+		if req.TargetDB.Table != "" {
+			tgtCfg.Database = req.TargetDB.Database
+		}
+	}
+
+	run, err := h.svc.RunJob(id, srcCfg, tgtCfg)
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, err.Error())
 	}

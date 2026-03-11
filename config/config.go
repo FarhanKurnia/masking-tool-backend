@@ -12,15 +12,17 @@ import (
 var Config *config
 
 type config struct {
-	Port         string
-	DBType       string
-	DBHost       string
-	DBPort       string
-	DBUser       string
-	DBPassword   string
-	DBName       string
-	DBSSLMode    string
-	JobsPageSize int
+	Port              string
+	DBType            string
+	DBHost            string
+	DBPort            string
+	DBUser            string
+	DBPassword        string
+	DBName            string
+	DBSSLMode         string
+	JobsPageSize      int
+	EncryptionKeyName string
+	EncryptionKey     string
 }
 
 func init() {
@@ -33,15 +35,17 @@ func init() {
 	}
 
 	Config = &config{
-		Port:         getEnv("PORT", "8080"),
-		DBType:       getEnv("DB_TYPE", "postgres"),
-		DBHost:       getEnv("DB_HOST", "localhost"),
-		DBPort:       getEnv("DB_PORT", "5432"),
-		DBUser:       getEnv("DB_USER", "postgres"),
-		DBPassword:   getEnv("DB_PASSWORD", ""),
-		DBName:       getEnv("DB_NAME", "masking"),
-		DBSSLMode:    getEnv("DB_SSLMODE", "disable"),
-		JobsPageSize: jobsPageSize,
+		Port:              getEnv("PORT", "8080"),
+		DBType:            getEnv("DB_TYPE", "postgres"),
+		DBHost:            getEnv("DB_HOST", "localhost"),
+		DBPort:            getEnv("DB_PORT", "5432"),
+		DBUser:            getEnv("DB_USER", "postgres"),
+		DBPassword:        getEnv("DB_PASSWORD", ""),
+		DBName:            getEnv("DB_NAME", "masking"),
+		DBSSLMode:         getEnv("DB_SSLMODE", "disable"),
+		JobsPageSize:      jobsPageSize,
+		EncryptionKeyName: getEnv("ENCRYPTION_KEY_NAME", "default"),
+		EncryptionKey:     getEnv("ENCRYPTION_KEY_default", ""),
 	}
 }
 

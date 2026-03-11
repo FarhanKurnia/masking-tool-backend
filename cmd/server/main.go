@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/example/masking-tool-backend/pkg/crypto"
+
 	"github.com/example/masking-tool-backend/config"
 	"github.com/example/masking-tool-backend/internal/api"
 	"github.com/example/masking-tool-backend/internal/models"
@@ -13,6 +15,11 @@ import (
 
 func main() {
 	logger.Init()
+
+	// Initialize encryption manager (non-fatal if it fails)
+	if err := crypto.Initialize(); err != nil {
+		log.Printf("warning: encryption initialization failed: %v", err)
+	}
 
 	if err := db.Init(); err != nil {
 		log.Fatalf("failed to connect to database: %v", err)

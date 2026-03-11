@@ -9,27 +9,39 @@ import (
 )
 
 // Job represents the jobs table
+// DBConfig groups the connection parameters that are _not_ persisted
+// with a job. The frontend must supply these when starting a run so the
+// worker can open source/target connections without storing credentials.
+//
+// Note the field names correspond to the JSON we expect from the client.
+// We keep the `Type` field so the driver can be chosen at runtime.
+//
+// This struct lives in models so it can be shared by handlers, services,
+// and workers without introducing import cycles.
+
+type DBConfig struct {
+	Type     string `json:"type"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	Database string `json:"database"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+}
+
+// Job represents the jobs table
+// connection parameters are intentionally omitted; they are supplied at run time
+// instead of being stored in the database.
 type Job struct {
-	ID                string        `gorm:"type:char(36);primaryKey" json:"id"`
-	Name              string        `json:"name"`
-	SourceDBType      string        `json:"source_db_type"`
-	SourceDBHost      string        `json:"source_db_host"`
-	SourceDBPort      int           `json:"source_db_port"`
-	SourceDBName      string        `json:"source_db_name"`
-	SourceDBUser      string        `json:"source_db_user"`
-	SourceDBPassword  string        `json:"-"`
-	StagingDBType     *string       `json:"staging_db_type,omitempty"`
-	StagingDBHost     *string       `json:"staging_db_host,omitempty"`
-	StagingDBPort     *int          `json:"staging_db_port,omitempty"`
-	StagingDBName     *string       `json:"staging_db_name,omitempty"`
-	StagingDBUser     *string       `json:"staging_db_user,omitempty"`
-	StagingDBPassword *string       `json:"-"`
-	StagingTableName  *string       `json:"staging_table_name,omitempty"`
-	OutputType        string        `json:"output_type"`
-	CreatedAt         time.Time     `json:"created_at"`
-	JobTables         []JobTable    `gorm:"foreignKey:JobID" json:"tables,omitempty"`
-	MaskingRules      []MaskingRule `gorm:"foreignKey:JobID" json:"rules,omitempty"`
-	JobRuns           []JobRun      `gorm:"foreignKey:JobID" json:"runs,omitempty"`
+	ID              string        `gorm:"type:char(36);primaryKey" json:"id"`
+	Name            string        `json:"name"`
+	SourceDBType    string        `json:"source_db_type"`
+	TargetDBType    *string       `json:"target_db_type,omitempty"`
+	TargetTableName *string       `json:"target_table_name,omitempty"`
+	OutputType      string        `json:"output_type"`
+	CreatedAt       time.Time     `json:"created_at"`
+	JobTables       []JobTable    `gorm:"foreignKey:JobID" json:"tables,omitempty"`
+	MaskingRules    []MaskingRule `gorm:"foreignKey:JobID" json:"rules,omitempty"`
+	JobRuns         []JobRun      `gorm:"foreignKey:JobID" json:"runs,omitempty"`
 }
 
 // JobTable represents job_tables
@@ -52,14 +64,13 @@ type MaskingRule struct {
 
 // JobRun represents job_runs
 type JobRun struct {
-	ID            string    `gorm:"type:char(36);primaryKey" json:"id"`
-	JobID         string    `gorm:"type:char(36);index" json:"job_id"`
-	Status        string    `json:"status"`
-	RowsProcessed int       `json:"rows_processed"`
-	StartedAt     time.Time `json:"started_at"`
-	// FinishedAt    *time.Time `db:"finished_at" json:"finished_at"`
-	FinishedAt time.Time `json:"finished_at"`
-	Log        string    `json:"log"`
+	ID            string     `gorm:"type:char(36);primaryKey" json:"id"`
+	JobID         string     `gorm:"type:char(36);index" json:"job_id"`
+	Status        string     `json:"status"`
+	RowsProcessed int        `json:"rows_processed"`
+	StartedAt     time.Time  `json:"started_at"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	Log           string     `json:"log"`
 }
 
 // before create hooks assign UUIDs if missing

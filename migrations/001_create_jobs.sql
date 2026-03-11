@@ -1,15 +1,12 @@
 -- migrations/001_create_jobs.sql
 
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
 CREATE TABLE IF NOT EXISTS jobs (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id BIGINT PRIMARY KEY DEFAULT (UUID_SHORT()),
+    uuid VARCHAR(36) DEFAULT (UUID()),
     name VARCHAR NOT NULL,
-    source_db_host VARCHAR,
-    source_db_port INT,
-    source_db_name VARCHAR,
-    source_db_user VARCHAR,
-    source_db_password VARCHAR,
+    source_db_type VARCHAR,
     output_type VARCHAR,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
-);
+    target_db_type VARCHAR,
+    target_table_name VARCHAR,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+) COMMENT='Masking jobs - passwords are not stored; target_db_* columns replace staging';

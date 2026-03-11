@@ -3,12 +3,13 @@ package workers
 import (
 	"time"
 
+	"github.com/example/masking-tool-backend/internal/models"
 	"github.com/example/masking-tool-backend/internal/repositories"
 	"github.com/example/masking-tool-backend/pkg/db"
 )
 
 // ExecuteJob performs masking job; uses processor implementation
-func ExecuteJob(runID string) error {
+func ExecuteJob(runID string, srcCfg models.DBConfig, tgtCfg *models.DBConfig) error {
 	repo := repositories.NewJobRepository(db.Conn)
 	run, err := repo.GetJobRun(runID)
 	if err != nil {
@@ -25,18 +26,20 @@ func ExecuteJob(runID string) error {
 	if job == nil {
 		run.Status = "failed"
 		run.Log = "job not found"
-		run.FinishedAt = time.Now()
+		now := time.Now()
+		run.FinishedAt = &now
 		return repo.UpdateJobRun(run)
 	}
 
 	// call processor that reads source and writes CSV
-	if err := processJob(job, run); err != nil {
+	if err := processJob(job, run, srcCfg, tgtCfg); err != nil {
 		run.Status = "failed"
 		run.Log = err.Error()
 	} else {
 		run.Status = "completed"
 		run.Log = "done"
 	}
-	run.FinishedAt = time.Now()
+	now := time.Now()
+	run.FinishedAt = &now
 	return repo.UpdateJobRun(run)
 }

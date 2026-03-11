@@ -36,7 +36,8 @@ func (r *jobRepo) List(offset, limit int) ([]models.Job, int64, error) {
 	if err := r.db.Model(&models.Job{}).Count(&count).Error; err != nil {
 		return nil, 0, err
 	}
-	if err := r.db.Preload("JobTables").Preload("MaskingRules").Preload("JobRuns").Offset(offset).Limit(limit).Find(&jobs).Error; err != nil {
+	// order by newest jobs first
+	if err := r.db.Preload("JobTables").Preload("MaskingRules").Preload("JobRuns").Order("created_at DESC").Offset(offset).Limit(limit).Find(&jobs).Error; err != nil {
 		return nil, 0, err
 	}
 	return jobs, count, nil

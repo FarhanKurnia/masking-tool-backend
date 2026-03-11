@@ -14,10 +14,13 @@ const DefaultPageSize = 20
 
 // JobService defines business logic
 type JobService interface {
-	CreateJob(name string, sourceType string, host string, port int, database string, user string, password string, table string, output string, stagingType *string, stagingHost *string, stagingPort *int, stagingDatabase *string, stagingUser *string, stagingPassword *string, stagingTableName *string) (*models.Job, error)
+	// CreateJob persists a job configuration without any sensitive
+	// connection details; those are supplied later when the job is run.
+	CreateJob(name string, sourceType string, table string, output string, targetType *string, targetTableName *string) (*models.Job, error)
 	ListJobs(page, pageSize int) ([]models.Job, int64, error)
 	SaveRules(jobID string, rules []models.MaskingRule) error
-	RunJob(jobID string) (*models.JobRun, error)
+	// RunJob now requires connection configs at invocation time.
+	RunJob(jobID string, src models.DBConfig, tgt *models.DBConfig) (*models.JobRun, error)
 	GetRunStatus(runID string) (*models.JobRun, error)
 }
 
@@ -29,25 +32,20 @@ func NewJobService(repo repositories.JobRepository) JobService {
 	return &jobService{repo: repo}
 }
 
-func (s *jobService) CreateJob(name string, sourceType string, host string, port int, database string, user string, password string, table string, output string, stagingType *string, stagingHost *string, stagingPort *int, stagingDatabase *string, stagingUser *string, stagingPassword *string, stagingTableName *string) (*models.Job, error) {
-	job := &models.Job{
-		Name:              name,
-		SourceDBType:      sourceType,
-		SourceDBHost:      host,
-		SourceDBPort:      port,
-		SourceDBName:      database,
-		SourceDBUser:      user,
-		SourceDBPassword:  password,
-		StagingDBType:     stagingType,
-		StagingDBHost:     stagingHost,
-		StagingDBPort:     stagingPort,
-		StagingDBName:     stagingDatabase,
-		StagingDBUser:     stagingUser,
-		StagingDBPassword: stagingPassword,
-		StagingTableName:  stagingTableName,
-		OutputType:        output,
-		CreatedAt:         time.Now(),
+func (s *jobService) CreateJob(name string, sourceType string, table string, output string, targetType *string, targetTableName *string) (*models.Job, error) {
+	// accept legacy output value
+	if output == "staging" {
+		output = "target"
 	}
+	job := &models.Job{
+		Name:            name,
+		SourceDBType:    sourceType,
+		TargetDBType:    targetType,
+		TargetTableName: targetTableName,
+		OutputType:      output,
+		CreatedAt:       time.Now(),
+	}
+
 	if err := s.repo.Create(job); err != nil {
 		return nil, err
 	}
@@ -72,7 +70,7 @@ func (s *jobService) SaveRules(jobID string, rules []models.MaskingRule) error {
 	return s.repo.SaveMaskingRules(jobID, rules)
 }
 
-func (s *jobService) RunJob(jobID string) (*models.JobRun, error) {
+func (s *jobService) RunJob(jobID string, src models.DBConfig, tgt *models.DBConfig) (*models.JobRun, error) {
 	job, err := s.repo.GetByID(jobID)
 	if err != nil {
 		return nil, err
@@ -80,20 +78,22 @@ func (s *jobService) RunJob(jobID string) (*models.JobRun, error) {
 	if job == nil {
 		return nil, errors.New("job not found")
 	}
+
 	run := &models.JobRun{
 		JobID:      jobID,
 		Status:     "running",
 		StartedAt:  time.Now(),
-		FinishedAt: time.Now(),
+		FinishedAt: nil,
 	}
 	if err := s.repo.CreateJobRun(run); err != nil {
 		return nil, err
 	}
-	go func(runID string) {
-		if err := workers.ExecuteJob(runID); err != nil {
+	// launch worker with supplied configs
+	go func(runID string, sCfg models.DBConfig, tCfg *models.DBConfig) {
+		if err := workers.ExecuteJob(runID, sCfg, tCfg); err != nil {
 			logrus.Error(err)
 		}
-	}(run.ID)
+	}(run.ID, src, tgt)
 	return run, nil
 }
 
