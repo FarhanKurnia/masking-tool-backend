@@ -78,12 +78,16 @@ func (h *JobHandler) ListJobs(c *fiber.Ctx) error {
 
 	// transform to frontend-friendly shape
 	type jobResp struct {
-		ID         string     `json:"id"`
-		TableName  string     `json:"table_name"`
-		Status     string     `json:"status"`
-		TotalRows  int        `json:"total_rows"`
-		StartedAt  *time.Time `json:"started_at,omitempty"`
-		FinishedAt *time.Time `json:"finished_at,omitempty"`
+		// ID intentionally omitted from response for dashboard display
+		TableName    string     `json:"table_name"`
+		Status       string     `json:"status"`
+		TotalRows    int        `json:"total_rows"`
+		StartedAt    *time.Time `json:"started_at,omitempty"`
+		FinishedAt   *time.Time `json:"finished_at,omitempty"`
+		SourceDBType string     `json:"source_db_type"`
+		TargetDBType *string    `json:"target_db_type,omitempty"`
+		TargetTable  *string    `json:"target_table_name,omitempty"`
+		OutputType   string     `json:"output_type"`
 	}
 	var out []jobResp
 	for _, j := range jobs {
@@ -107,7 +111,17 @@ func (h *JobHandler) ListJobs(c *fiber.Ctx) error {
 			startedAt = &latest.StartedAt
 			finishedAt = latest.FinishedAt
 		}
-		out = append(out, jobResp{ID: j.ID, TableName: table, Status: status, TotalRows: rows, StartedAt: startedAt, FinishedAt: finishedAt})
+		out = append(out, jobResp{
+			TableName:    table,
+			Status:       status,
+			TotalRows:    rows,
+			StartedAt:    startedAt,
+			FinishedAt:   finishedAt,
+			SourceDBType: j.SourceDBType,
+			TargetDBType: j.TargetDBType,
+			TargetTable:  j.TargetTableName,
+			OutputType:   j.OutputType,
+		})
 	}
 
 	return c.JSON(fiber.Map{"data": out, "total": total})
